@@ -1,0 +1,11 @@
+{
+  "type": "record",
+  "name": "OrderKey",
+  "namespace": "com.camunda.kafka.test",
+  "fields": [
+    {
+      "name": "orderId",
+      "type": "string"
+    }
+  ]
+}

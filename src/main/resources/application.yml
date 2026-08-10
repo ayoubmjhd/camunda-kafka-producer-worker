@@ -1,0 +1,32 @@
+spring:
+  application:
+    name: camunda-kafka-avro-worker
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: io.confluent.kafka.serializers.KafkaAvroSerializer
+      value-serializer: io.confluent.kafka.serializers.KafkaAvroSerializer
+      properties:
+        schema.registry.url: ${SCHEMA_REGISTRY_URL:http://localhost:8081}
+        auto.register.schemas: false
+        use.latest.version: true
+
+# Camunda 8.6 Zeebe client configuration
+camunda:
+  client:
+    mode: self-managed
+    auth:
+      enabled: false
+    zeebe:
+      enabled: true
+      grpc-address: http://${ZEEBE_GATEWAY:localhost:26500}
+      rest-address: http://${ZEEBE_GATEWAY:localhost:26500}
+      prefer-rest-over-grpc: false
+
+# Logging
+logging:
+  level:
+    com.camunda.kafka: DEBUG
+    io.camunda.zeebe: INFO
+    org.apache.kafka: WARN
