@@ -24,6 +24,15 @@ camunda:
       rest-address: http://${ZEEBE_GATEWAY:localhost:26500}
       prefer-rest-over-grpc: false
 
+# Genesys Cloud REST Worker configuration
+genesys:
+  api-base-url: ${GENESYS_API_BASE_URL:https://api.mypurecloud.de}
+  login-url: ${GENESYS_LOGIN_URL:https://login.mypurecloud.de}
+  client-id: ${GENESYS_CLIENT_ID:}
+  client-secret: ${GENESYS_CLIENT_SECRET:}
+  connect-timeout-seconds: ${GENESYS_CONNECT_TIMEOUT:30}
+  read-timeout-seconds: ${GENESYS_READ_TIMEOUT:120}
+
 # Logging
 logging:
   level:
