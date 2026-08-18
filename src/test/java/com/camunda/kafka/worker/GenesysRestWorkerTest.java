@@ -70,6 +70,44 @@ class GenesysRestWorkerTest {
     }
 
     @Test
+    void executeRequest_WithBody_Success() {
+        // Arrange
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("name", "John Doe");
+        requestBody.put("email", "john.doe@example.com");
+        
+        validRequest.setMethod("POST");
+        validRequest.setBody(requestBody);
+
+        Map<String, Object> responseBody = new HashMap<>();
+        responseBody.put("id", "12345");
+        
+        GenesysRestRequestResultVariables mockResponse = new GenesysRestRequestResultVariables(201, new HashMap<>(), responseBody);
+        
+        when(genesysRestService.execute(
+                eq(validRequest.getUrl()),
+                eq(validRequest.getMethod()),
+                eq(validRequest.getHeaders()),
+                eq(requestBody),
+                eq(validRequest.getQueryParameters()),
+                eq(validRequest.getConnectionTimeoutInSeconds()),
+                eq(validRequest.getReadTimeoutInSeconds())
+        )).thenReturn(mockResponse);
+
+        // Act
+        GenesysRestRequestResultVariables result = worker.executeRequest(validRequest);
+
+        // Assert
+        assertNotNull(result);
+        assertEquals(201, result.getStatus());
+        assertEquals(responseBody, result.getBody());
+        
+        verify(genesysRestService, times(1)).execute(
+                any(), any(), any(), eq(requestBody), any(), any(), any()
+        );
+    }
+
+    @Test
     void executeRequest_MissingUrl_ThrowsException() {
         // Arrange
         validRequest.setUrl(null);
