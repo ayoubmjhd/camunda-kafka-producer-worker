@@ -179,6 +179,12 @@ services:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
       - SCHEMA_REGISTRY_URL=http://schema-registry:8081
       - ZEEBE_GATEWAY=zeebe:26500
+      - GENESYS_API_BASE_URL=https://demo.duendesoftware.com
+      - GENESYS_LOGIN_URL=https://demo.duendesoftware.com
+      - GENESYS_TOKEN_PATH=/connect/token
+      - GENESYS_CLIENT_ID=m2m
+      - GENESYS_CLIENT_SECRET=secret
+      - GENESYS_SCOPE=api
     networks:
       - camunda-kafka
     depends_on:

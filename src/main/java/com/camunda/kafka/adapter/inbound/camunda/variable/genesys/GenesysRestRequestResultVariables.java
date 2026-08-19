@@ -1,4 +1,4 @@
-package com.camunda.kafka.model;
+package com.camunda.kafka.adapter.inbound.camunda.variable.genesys;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -7,7 +7,7 @@ import lombok.NoArgsConstructor;
 import java.util.Map;
 
 /**
- * Generic Genesys REST response returned by the worker.
+ * Camunda output variables returned after the Genesys REST call.
  * Mirrors the Camunda REST Connector output structure so existing
  * output mappings in BPMN continue to work (e.g., {@code result.body}).
  *
@@ -23,7 +23,12 @@ import java.util.Map;
 @AllArgsConstructor
 public class GenesysRestRequestResultVariables {
 
+    /** HTTP status code returned by Genesys. */
     private int status;
+
+    /** Selected response headers (flattened to a simple map). */
     private Map<String, String> headers;
+
+    /** Response body – can be a String, Map, POJO, … */
     private Object body;
 }

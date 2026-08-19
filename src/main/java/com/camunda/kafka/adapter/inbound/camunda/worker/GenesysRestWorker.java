@@ -1,9 +1,12 @@
-package com.camunda.kafka.worker;
+package com.camunda.kafka.adapter.inbound.camunda.worker;
 
+import com.camunda.kafka.adapter.inbound.camunda.mapper.GenesysRestCamundaMapper;
+import com.camunda.kafka.adapter.inbound.camunda.variable.genesys.GenesysRestRequestResultVariables;
+import com.camunda.kafka.adapter.inbound.camunda.variable.genesys.GenesysRestRequestVariables;
+import com.camunda.kafka.domain.port.inbound.usecase.genesys.GenesysRestCallUseCase;
+import com.camunda.kafka.domain.port.outbound.genesys.GenesysRestRequest;
+import com.camunda.kafka.domain.port.outbound.genesys.GenesysRestResponse;
 import com.camunda.kafka.exception.GenesysRestException;
-import com.camunda.kafka.model.GenesysRestRequestVariables;
-import com.camunda.kafka.model.GenesysRestRequestResultVariables;
-import com.camunda.kafka.service.GenesysRestService;
 import io.camunda.zeebe.spring.client.annotation.JobWorker;
 import io.camunda.zeebe.spring.client.annotation.VariablesAsType;
 import lombok.RequiredArgsConstructor;
@@ -28,64 +31,53 @@ import org.springframework.stereotype.Component;
  *
  * <p><strong>URL handling:</strong> If the {@code url} starts with "/",
  * the Genesys base URL from config is prepended automatically.
- * For example, set url to {@code /api/v2/conversations/emails/agentless}
- * and the worker resolves it to {@code https://api.mypurecloud.de/api/v2/conversations/emails/agentless}.
  *
  * <p><strong>Output:</strong> Returns a {@code result} variable with
  * {@code status}, {@code headers}, and {@code body} — same structure
  * as the REST Connector, so existing output mappings still work.
- *
- * <p>Process variables (same names as REST Connector):
- * <ul>
- *   <li>{@code url} - API path or full URL (required)</li>
- *   <li>{@code method} - HTTP method: GET, POST, PUT, DELETE, PATCH (required)</li>
- *   <li>{@code headers} - Additional HTTP headers as Map (optional)</li>
- *   <li>{@code body} - Request body (optional)</li>
- *   <li>{@code queryParameters} - Query parameters as Map (optional)</li>
- *   <li>{@code connectionTimeoutInSeconds} - Connect timeout override (optional)</li>
- *   <li>{@code readTimeoutInSeconds} - Read timeout override (optional)</li>
- * </ul>
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class GenesysRestWorker {
 
-    private final GenesysRestService genesysRestService;
+    private final GenesysRestCallUseCase genesysRestCallUseCase;
+    private final GenesysRestCamundaMapper mapper;
 
     /**
      * Job worker handler. Receives process variables via {@code @VariablesAsType},
-     * validates them, and executes the HTTP request against Genesys Cloud.
+     * validates them, maps to domain, executes via use-case, and maps the response back.
      *
-     * @param request the REST request (mapped from process variables)
+     * @param requestVariables the REST request (mapped from process variables)
      * @return response with status, headers, and body
      */
     @JobWorker(type = "genesys-rest")
-    public GenesysRestRequestResultVariables executeRequest(@VariablesAsType GenesysRestRequestVariables request) {
-        log.info("Received Genesys REST request: method={}, url={}",
-                request.getMethod(), request.getUrl());
+    public GenesysRestRequestResultVariables executeRequest(
+            @VariablesAsType GenesysRestRequestVariables requestVariables) {
 
-        validateRequest(request);
+        log.info("Genesys REST call – method='{}' url='{}'",
+                requestVariables.getMethod(), requestVariables.getUrl());
+
+        validateRequest(requestVariables);
 
         try {
-            GenesysRestRequestResultVariables response = genesysRestService.execute(
-                    request.getUrl(),
-                    request.getMethod(),
-                    request.getHeaders(),
-                    request.getBody(),
-                    request.getQueryParameters(),
-                    request.getConnectionTimeoutInSeconds(),
-                    request.getReadTimeoutInSeconds()
-            );
+            // 1️⃣ Camunda → domain request
+            GenesysRestRequest domainRequest = mapper.toDomain(requestVariables);
 
-            log.info("Genesys REST call completed: method={}, url={}, status={}",
-                    request.getMethod(), request.getUrl(), response.getStatus());
+            // 2️⃣ Execute the use-case (which delegates to the outbound connector)
+            GenesysRestResponse domainResponse = genesysRestCallUseCase.execute(domainRequest);
 
-            return response;
+            log.info("Genesys REST call completed: method='{}', url='{}', status={}",
+                    requestVariables.getMethod(), requestVariables.getUrl(),
+                    domainResponse.getStatus());
+
+            // 3️⃣ Domain response → Camunda result variables
+            return mapper.toResultVariables(domainResponse);
 
         } catch (GenesysRestException e) {
             log.error("Genesys REST call failed: method={}, url={}, error={}",
-                    request.getMethod(), request.getUrl(), e.getMessage(), e);
+                    requestVariables.getMethod(), requestVariables.getUrl(),
+                    e.getMessage(), e);
             throw e;
         }
     }

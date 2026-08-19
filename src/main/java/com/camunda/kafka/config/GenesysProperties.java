@@ -36,6 +36,12 @@ public class GenesysProperties {
     @NotBlank(message = "genesys.client-secret is required")
     private String clientSecret;
 
+    /** OAuth2 scope (optional, e.g., "api" for some providers) */
+    private String scope;
+
+    /** Token endpoint path appended to loginUrl (default: /oauth/token) */
+    private String tokenPath = "/oauth/token";
+
     /** HTTP connect timeout in seconds (default: 30) */
     @Positive
     private int connectTimeoutSeconds = 30;

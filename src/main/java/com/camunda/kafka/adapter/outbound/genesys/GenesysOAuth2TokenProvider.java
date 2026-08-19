@@ -1,12 +1,13 @@
-package com.camunda.kafka.service;
+package com.camunda.kafka.adapter.outbound.genesys;
 
+import com.camunda.kafka.application.port.outbound.GenesysTokenProvider;
 import com.camunda.kafka.config.GenesysProperties;
 import com.camunda.kafka.exception.GenesysRestException;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClientException;
@@ -17,15 +18,15 @@ import java.time.Instant;
 import java.util.Base64;
 
 /**
- * Manages the OAuth2 Client Credentials flow for Genesys Cloud.
+ * OAuth2 Client Credentials token provider for Genesys Cloud.
  *
  * <p>Handles token acquisition, caching, and automatic refresh.
  * Optimizes read paths using lock-free atomic checks with a Java 17 Record wrapper,
  * avoiding thread synchronization bottleneck on high-throughput jobs.
  */
 @Slf4j
-@Service
-public class GenesysAuthService {
+@Component
+public class GenesysOAuth2TokenProvider implements GenesysTokenProvider {
 
     private static final long TOKEN_REFRESH_BUFFER_SECONDS = 60;
 
@@ -36,7 +37,7 @@ public class GenesysAuthService {
 
     private volatile CachedToken cachedToken = new CachedToken(null, Instant.EPOCH);
 
-    public GenesysAuthService(RestTemplate restTemplate, GenesysProperties config) {
+    public GenesysOAuth2TokenProvider(RestTemplate restTemplate, GenesysProperties config) {
         this.restTemplate = restTemplate;
         this.config = config;
     }
@@ -48,6 +49,7 @@ public class GenesysAuthService {
      * @return a valid Bearer access token
      * @throws GenesysRestException if token acquisition fails
      */
+    @Override
     public String getAccessToken() {
         CachedToken current = this.cachedToken;
         if (isTokenValid(current)) {
@@ -71,6 +73,7 @@ public class GenesysAuthService {
      * Forces a token refresh. Call this when the API returns 401
      * to handle token invalidation by Genesys.
      */
+    @Override
     public synchronized void invalidateToken() {
         log.info("Invalidating Genesys OAuth token");
         this.cachedToken = new CachedToken(null, Instant.EPOCH);
@@ -82,7 +85,7 @@ public class GenesysAuthService {
     }
 
     private void refreshToken() {
-        String tokenUrl = config.getLoginUrl() + "/oauth/token";
+        String tokenUrl = config.getLoginUrl() + config.getTokenPath();
 
         // Build Basic auth header: Base64(clientId:clientSecret)
         String credentials = config.getClientId() + ":" + config.getClientSecret();
@@ -95,6 +98,11 @@ public class GenesysAuthService {
 
         MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
         body.add("grant_type", "client_credentials");
+
+        // Include scope if configured (required by some OAuth2 providers)
+        if (config.getScope() != null && !config.getScope().isBlank()) {
+            body.add("scope", config.getScope());
+        }
 
         HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(body, headers);
 

@@ -1,5 +1,6 @@
-package com.camunda.kafka.model;
+package com.camunda.kafka.adapter.inbound.camunda.variable.genesys;
 
+import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -7,7 +8,7 @@ import lombok.NoArgsConstructor;
 import java.util.Map;
 
 /**
- * Generic Genesys REST request POJO for the Genesys REST Worker.
+ * Camunda input variables for a generic Genesys REST call.
  * Mapped via {@code @VariablesAsType} from Camunda process variables.
  *
  * <p>Uses the <strong>same variable names</strong> as the Camunda REST Connector,
@@ -34,11 +35,26 @@ import java.util.Map;
 @AllArgsConstructor
 public class GenesysRestRequestVariables {
 
+    /** Full URL (or relative path if a base URL is configured). */
+    @NotBlank
     private String url;
+
+    /** HTTP method – GET, POST, PUT, DELETE, PATCH */
+    @NotBlank
     private String method;
+
+    /** Optional additional HTTP headers. */
     private Map<String, String> headers;
+
+    /** Request body – can be a POJO or a raw JSON string. */
     private Object body;
+
+    /** Optional query-string parameters. */
     private Map<String, Object> queryParameters;
+
+    /** Connection timeout in seconds (optional). */
     private Integer connectionTimeoutInSeconds;
+
+    /** Read timeout in seconds (optional). */
     private Integer readTimeoutInSeconds;
 }
