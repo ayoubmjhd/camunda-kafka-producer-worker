@@ -126,7 +126,7 @@ public class GenesysOAuth2TokenProvider implements GenesysTokenProvider {
     }
 
     @Data
-    private static class TokenResponse {
+    static class TokenResponse {
         @JsonProperty("access_token")
         private String accessToken;
 
