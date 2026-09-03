@@ -10,8 +10,8 @@ import org.springframework.http.*;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
-import org.springframework.web.client.RestTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -30,15 +30,15 @@ public class GenesysOAuth2TokenProvider implements GenesysTokenProvider {
 
     private static final long TOKEN_REFRESH_BUFFER_SECONDS = 60;
 
-    private final RestTemplate restTemplate;
+    private final RestClient restClient;
     private final GenesysProperties config;
 
     private record CachedToken(String token, Instant expiry) {}
 
     private volatile CachedToken cachedToken = new CachedToken(null, Instant.EPOCH);
 
-    public GenesysOAuth2TokenProvider(RestTemplate restTemplate, GenesysProperties config) {
-        this.restTemplate = restTemplate;
+    public GenesysOAuth2TokenProvider(RestClient genesysAuthRestClient, GenesysProperties config) {
+        this.restClient = genesysAuthRestClient;
         this.config = config;
     }
 
@@ -63,7 +63,7 @@ public class GenesysOAuth2TokenProvider implements GenesysTokenProvider {
                 return current.token();
             }
 
-            log.info("Genesys OAuth token expired or missing, requesting new token...");
+            log.debug("Genesys OAuth token expired or missing, requesting new token...");
             refreshToken();
             return this.cachedToken.token();
         }
@@ -92,10 +92,6 @@ public class GenesysOAuth2TokenProvider implements GenesysTokenProvider {
         String encodedCredentials = Base64.getEncoder()
                 .encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-        headers.set(HttpHeaders.AUTHORIZATION, "Basic " + encodedCredentials);
-
         MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
         body.add("grant_type", "client_credentials");
 
@@ -104,22 +100,25 @@ public class GenesysOAuth2TokenProvider implements GenesysTokenProvider {
             body.add("scope", config.getScope());
         }
 
-        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(body, headers);
-
         try {
-            ResponseEntity<TokenResponse> response = restTemplate.exchange(
-                    tokenUrl, HttpMethod.POST, request, TokenResponse.class);
+            TokenResponse tokenResponse = restClient.post()
+                    .uri(tokenUrl)
+                    .headers(h -> {
+                        h.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+                        h.set(HttpHeaders.AUTHORIZATION, "Basic " + encodedCredentials);
+                    })
+                    .body(body)
+                    .retrieve()
+                    .body(TokenResponse.class);
 
-            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
-                TokenResponse tokenResponse = response.getBody();
+            if (tokenResponse != null && tokenResponse.getAccessToken() != null) {
                 this.cachedToken = new CachedToken(
                         tokenResponse.getAccessToken(),
                         Instant.now().plusSeconds(tokenResponse.getExpiresIn())
                 );
-                log.info("Genesys OAuth token acquired, expires in {}s", tokenResponse.getExpiresIn());
+                log.debug("Genesys OAuth token acquired, expires in {}s", tokenResponse.getExpiresIn());
             } else {
-                throw new GenesysRestException(
-                        "Failed to obtain Genesys token: HTTP " + response.getStatusCode());
+                throw new GenesysRestException("Failed to obtain Genesys token: empty response");
             }
         } catch (RestClientException e) {
             throw new GenesysRestException("Failed to obtain Genesys OAuth token: " + e.getMessage(), e);

@@ -9,30 +9,30 @@ import com.camunda.kafka.application.port.outbound.GenesysTokenProvider;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.*;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
-import org.springframework.web.client.*;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import java.time.Duration;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Concrete implementation of the outbound port that uses Spring {@link RestTemplate}
+ * Concrete implementation of the outbound port that uses Spring {@link RestClient}
  * to perform OAuth2-protected HTTP calls to Genesys Cloud.
  *
  * <p>Handles:
  * <ul>
- *   <li>OAuth2 Bearer token injection (auto-refreshed)</li>
+ *   <li>OAuth2 Bearer token injection (auto-refreshed via interceptor)</li>
  *   <li>URL resolution (relative paths get the base URL prepended)</li>
  *   <li>Query parameter handling (lists, objects, primitives)</li>
  *   <li>Throws specific exceptions for 408, 429, and 5xx so Zeebe can handle retries</li>
- *   <li>Per-request timeout overrides (safely cached to prevent leaks)</li>
  *   <li>JSON response parsing</li>
  * </ul>
  */
@@ -40,27 +40,16 @@ import java.util.Map;
 @Component
 public class GenesysRestConnector implements GenesysRestOutboundPort {
 
-    private final RestTemplate defaultRestTemplate;
-    private final RestTemplateBuilder restTemplateBuilder;
+    private final RestClient defaultRestClient;
     private final GenesysProperties config;
     private final GenesysTokenProvider tokenProvider;
     private final ObjectMapper objectMapper;
-    private final Map<String, RestTemplate> restTemplateCache = Collections.synchronizedMap(
-            new LinkedHashMap<>(16, 0.75f, true) {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<String, RestTemplate> eldest) {
-                    return size() > 50; // Max 50 cached custom RestTemplates
-                }
-            }
-    );
 
-    public GenesysRestConnector(RestTemplate genesysRestTemplate,
-                                RestTemplateBuilder restTemplateBuilder,
+    public GenesysRestConnector(RestClient genesysApiRestClient,
                                 GenesysProperties config,
                                 GenesysTokenProvider tokenProvider,
                                 ObjectMapper objectMapper) {
-        this.defaultRestTemplate = genesysRestTemplate;
-        this.restTemplateBuilder = restTemplateBuilder;
+        this.defaultRestClient = genesysApiRestClient;
         this.config = config;
         this.tokenProvider = tokenProvider;
         this.objectMapper = objectMapper;
@@ -71,44 +60,25 @@ public class GenesysRestConnector implements GenesysRestOutboundPort {
         // 1. Resolve URL
         String resolvedUrl = resolveUrl(request.getUrl(), request.getQueryParameters());
 
-        // 2. Build headers with Bearer token
-        HttpHeaders headers = buildHeaders(request.getHeaders());
+        // 2. Build custom headers (Bearer token is injected by the RestClient interceptor)
+        Map<String, String> customHeaders = buildCustomHeaders(request.getHeaders());
 
         // 3. Process the request body (convert Map to MultiValueMap for form/multipart requests)
-        Object requestBody = request.getBody();
-        if (requestBody instanceof Map && headers.getContentType() != null) {
-            MediaType contentType = headers.getContentType();
-            if (MediaType.APPLICATION_FORM_URLENCODED.includes(contentType)
-                    || MediaType.MULTIPART_FORM_DATA.includes(contentType)) {
-                MultiValueMap<String, Object> formParams = new LinkedMultiValueMap<>();
-                ((Map<?, ?>) requestBody).forEach((k, v) -> {
-                    if (v != null) {
-                        formParams.add(k.toString(), v);
-                    }
-                });
-                requestBody = formParams;
-            }
-        }
+        Object requestBody = processRequestBody(request.getBody(), request.getHeaders());
 
-        HttpEntity<Object> httpRequest = (requestBody != null)
-                ? new HttpEntity<>(requestBody, headers)
-                : new HttpEntity<>(headers);
         HttpMethod httpMethod = HttpMethod.valueOf(request.getMethod().toUpperCase());
 
-        // 4. Get the right RestTemplate (with caching for overrides)
-        RestTemplate targetRestTemplate = getRestTemplate(
-                request.getConnectionTimeoutInSeconds(), request.getReadTimeoutInSeconds());
-
-        // 5. Execute request (letting Zeebe handle retries for failures)
-        return executeRequest(targetRestTemplate, resolvedUrl, httpMethod, httpRequest);
+        // 4. Execute request (letting Zeebe handle retries for failures)
+        return executeRequest(defaultRestClient, resolvedUrl, httpMethod, customHeaders, requestBody);
     }
 
     private GenesysRestResponse executeRequest(
-            RestTemplate targetRestTemplate, String url, HttpMethod method, HttpEntity<Object> request) {
+            RestClient restClient, String url, HttpMethod method,
+            Map<String, String> customHeaders, Object body) {
 
         try {
             log.debug("Genesys API call: {} {}", method, url);
-            ResponseEntity<String> response = targetRestTemplate.exchange(url, method, request, String.class);
+            ResponseEntity<String> response = doExchange(restClient, url, method, customHeaders, body);
             return buildResponse(response);
 
         } catch (HttpClientErrorException e) {
@@ -118,15 +88,11 @@ public class GenesysRestConnector implements GenesysRestOutboundPort {
             if (statusCode == 401) {
                 log.warn("Genesys API returned 401, invalidating token and retrying once...");
                 tokenProvider.invalidateToken();
-                // Rebuild headers with fresh token
-                HttpHeaders freshHeaders = buildHeaders(extractCustomHeaders(request.getHeaders()));
-                HttpEntity<Object> retryRequest = (request.getBody() != null)
-                        ? new HttpEntity<>(request.getBody(), freshHeaders)
-                        : new HttpEntity<>(freshHeaders);
 
                 try {
+                    // Interceptor will inject the fresh token on the retry call
                     ResponseEntity<String> retryResponse =
-                            targetRestTemplate.exchange(url, method, retryRequest, String.class);
+                            doExchange(restClient, url, method, customHeaders, body);
                     return buildResponse(retryResponse);
                 } catch (HttpStatusCodeException retryEx) {
                     if (retryEx.getStatusCode().is4xxClientError()
@@ -166,6 +132,61 @@ public class GenesysRestConnector implements GenesysRestOutboundPort {
     }
 
     /**
+     * Performs the actual HTTP exchange using the RestClient fluent API.
+     */
+    private ResponseEntity<String> doExchange(
+            RestClient restClient, String url, HttpMethod method,
+            Map<String, String> customHeaders, Object body) {
+
+        RestClient.RequestBodySpec requestSpec = restClient.method(method)
+                .uri(url)
+                .headers(httpHeaders -> {
+                    // Apply custom headers (Authorization is handled by the interceptor)
+                    if (customHeaders != null) {
+                        customHeaders.forEach(httpHeaders::set);
+                    }
+                    // Default to JSON if no Content-Type was set by custom headers
+                    if (!httpHeaders.containsKey(HttpHeaders.CONTENT_TYPE)) {
+                        httpHeaders.setContentType(MediaType.APPLICATION_JSON);
+                    }
+                });
+
+        if (body != null) {
+            requestSpec.body(body);
+        }
+
+        return requestSpec.retrieve().toEntity(String.class);
+    }
+
+    /**
+     * Processes the request body — converts Map to MultiValueMap for form/multipart requests.
+     */
+    private Object processRequestBody(Object requestBody, Map<String, String> headers) {
+        if (requestBody instanceof Map && headers != null) {
+            String contentTypeHeader = headers.entrySet().stream()
+                    .filter(e -> HttpHeaders.CONTENT_TYPE.equalsIgnoreCase(e.getKey()))
+                    .map(Map.Entry::getValue)
+                    .findFirst()
+                    .orElse(null);
+
+            if (contentTypeHeader != null) {
+                MediaType contentType = MediaType.parseMediaType(contentTypeHeader);
+                if (MediaType.APPLICATION_FORM_URLENCODED.includes(contentType)
+                        || MediaType.MULTIPART_FORM_DATA.includes(contentType)) {
+                    MultiValueMap<String, Object> formParams = new LinkedMultiValueMap<>();
+                    ((Map<?, ?>) requestBody).forEach((k, v) -> {
+                        if (v != null) {
+                            formParams.add(k.toString(), v);
+                        }
+                    });
+                    return formParams;
+                }
+            }
+        }
+        return requestBody;
+    }
+
+    /**
      * Resolves the URL: if it starts with "/", prepend the Genesys base URL.
      * Also appends query parameters if provided.
      */
@@ -186,7 +207,7 @@ public class GenesysRestConnector implements GenesysRestOutboundPort {
                     try {
                         String jsonValue = objectMapper.writeValueAsString(value);
                         builder.queryParam(key, jsonValue);
-                    } catch (Exception e) {
+                    } catch (JsonProcessingException e) {
                         builder.queryParam(key, value.toString());
                     }
                 } else {
@@ -200,65 +221,25 @@ public class GenesysRestConnector implements GenesysRestOutboundPort {
     }
 
     /**
-     * Builds HTTP headers with auto-injected Bearer token.
-     * Custom headers from the BPMN are merged in (but won't override Authorization).
+     * Extracts custom headers from the request, filtering out Authorization
+     * (which is injected by the RestClient interceptor).
      */
-    private HttpHeaders buildHeaders(Map<String, String> customHeaders) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(tokenProvider.getAccessToken());
-
-        if (customHeaders != null) {
-            customHeaders.forEach((key, value) -> {
-                // Don't let BPMN override the Authorization header
-                if (!HttpHeaders.AUTHORIZATION.equalsIgnoreCase(key)) {
-                    headers.set(key, value);
-                }
-            });
+    private Map<String, String> buildCustomHeaders(Map<String, String> headers) {
+        if (headers == null || headers.isEmpty()) {
+            return null;
         }
-
-        // Default to JSON if no Content-Type was set by custom headers
-        if (!headers.containsKey(HttpHeaders.CONTENT_TYPE)) {
-            headers.setContentType(MediaType.APPLICATION_JSON);
-        }
-
-        return headers;
-    }
-
-    /**
-     * Returns a RestTemplate with per-request timeout overrides,
-     * or the default one if no overrides are provided.
-     * RestTemplate instances are cached to prevent resource/connection pool leakage.
-     */
-    private RestTemplate getRestTemplate(Integer connectTimeoutOverride, Integer readTimeoutOverride) {
-        if (connectTimeoutOverride == null && readTimeoutOverride == null) {
-            return defaultRestTemplate;
-        }
-
-        int connectTimeout = connectTimeoutOverride != null
-                ? connectTimeoutOverride : config.getConnectTimeoutSeconds();
-        int readTimeout = readTimeoutOverride != null
-                ? readTimeoutOverride : config.getReadTimeoutSeconds();
-
-        String cacheKey = connectTimeout + "_" + readTimeout;
-        return restTemplateCache.computeIfAbsent(cacheKey, key -> {
-            log.info("Creating custom RestTemplate for overrides: connectTimeout={}s, readTimeout={}s",
-                    connectTimeout, readTimeout);
-            return restTemplateBuilder
-                    .requestFactory(org.springframework.http.client.JdkClientHttpRequestFactory.class)
-                    .setConnectTimeout(Duration.ofSeconds(connectTimeout))
-                    .setReadTimeout(Duration.ofSeconds(readTimeout))
-                    .build();
-        });
-    }
-
-    private GenesysRestResponse buildResponse(ResponseEntity<String> response) {
-        Map<String, String> responseHeaders = new LinkedHashMap<>();
-        response.getHeaders().forEach((key, values) -> {
-            if (values != null && !values.isEmpty()) {
-                responseHeaders.put(key, values.get(0));
+        Map<String, String> filtered = new LinkedHashMap<>();
+        headers.forEach((key, value) -> {
+            if (!HttpHeaders.AUTHORIZATION.equalsIgnoreCase(key)) {
+                filtered.put(key, value);
             }
         });
+        return filtered.isEmpty() ? null : filtered;
+    }
 
+
+    private GenesysRestResponse buildResponse(ResponseEntity<String> response) {
+        Map<String, String> responseHeaders = extractHeaders(response.getHeaders());
         Object parsedBody = parseResponseBody(response.getBody());
 
         return GenesysRestResponse.builder()
@@ -269,16 +250,7 @@ public class GenesysRestConnector implements GenesysRestOutboundPort {
     }
 
     private GenesysRestResponse buildErrorResponse(HttpStatusCodeException e) {
-        Map<String, String> responseHeaders = new LinkedHashMap<>();
-        HttpHeaders errorHeaders = e.getResponseHeaders();
-        if (errorHeaders != null) {
-            errorHeaders.forEach((key, values) -> {
-                if (values != null && !values.isEmpty()) {
-                    responseHeaders.put(key, values.get(0));
-                }
-            });
-        }
-
+        Map<String, String> responseHeaders = extractHeaders(e.getResponseHeaders());
         Object parsedBody = parseResponseBody(e.getResponseBodyAsString());
 
         return GenesysRestResponse.builder()
@@ -286,6 +258,18 @@ public class GenesysRestConnector implements GenesysRestOutboundPort {
                 .headers(responseHeaders)
                 .body(parsedBody)
                 .build();
+    }
+
+    private Map<String, String> extractHeaders(HttpHeaders httpHeaders) {
+        Map<String, String> responseHeaders = new LinkedHashMap<>();
+        if (httpHeaders != null) {
+            httpHeaders.forEach((key, values) -> {
+                if (values != null && !values.isEmpty()) {
+                    responseHeaders.put(key, values.get(0));
+                }
+            });
+        }
+        return responseHeaders;
     }
 
     /**
@@ -302,20 +286,5 @@ public class GenesysRestConnector implements GenesysRestOutboundPort {
             log.debug("Response body is not JSON, returning as raw string");
             return body;
         }
-    }
-
-    /**
-     * Extracts custom headers (non-standard) from existing headers.
-     */
-    private Map<String, String> extractCustomHeaders(HttpHeaders headers) {
-        Map<String, String> custom = new LinkedHashMap<>();
-        headers.forEach((key, values) -> {
-            if (!HttpHeaders.AUTHORIZATION.equalsIgnoreCase(key)
-                    && !HttpHeaders.CONTENT_TYPE.equalsIgnoreCase(key)
-                    && values != null && !values.isEmpty()) {
-                custom.put(key, values.get(0));
-            }
-        });
-        return custom;
     }
 }

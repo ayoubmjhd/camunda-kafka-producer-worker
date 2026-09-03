@@ -10,9 +10,8 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.client.WireMock;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import org.junit.jupiter.api.*;
-import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClient;
 
 import java.time.Duration;
 import java.util.HashMap;
@@ -68,13 +67,17 @@ class GenesysRestConnectorTest {
         requestFactory.setConnectTimeout(Duration.ofSeconds(5));
         requestFactory.setReadTimeout(Duration.ofSeconds(10));
 
-        RestTemplate restTemplate = new RestTemplateBuilder()
-                .requestFactory(() -> requestFactory)
+        // Build RestClient with auth interceptor (same as production wiring)
+        RestClient restClient = RestClient.builder()
+                .requestFactory(requestFactory)
+                .requestInterceptor((request, body, execution) -> {
+                    request.getHeaders().setBearerAuth(authService.getAccessToken());
+                    return execution.execute(request, body);
+                })
                 .build();
 
         connector = new GenesysRestConnector(
-                restTemplate,
-                new RestTemplateBuilder(),
+                restClient,
                 properties,
                 authService,
                 new ObjectMapper()

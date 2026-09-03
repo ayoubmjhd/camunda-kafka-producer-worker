@@ -34,7 +34,7 @@
             <artifactId>spring-boot-starter</artifactId>
         </dependency>
 
-        <!-- Spring Boot Web (RestTemplate for Genesys API calls) -->
+        <!-- Spring Boot Web (RestClient for Genesys API calls) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>

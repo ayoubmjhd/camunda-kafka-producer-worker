@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:modeler="http://camunda.org/schema/modeler/1.0" id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn" modeler:executionPlatform="Camunda Cloud" modeler:executionPlatformVersion="8.6.0">
+  
+  <bpmn:message id="Message_ControlsReceived" name="controls-received" />
+  <bpmn:message id="Message_FirstDocArrived" name="first-document-arrived">
+    <bpmn:extensionElements><zeebe:subscription correlationKey="=requestId" /></bpmn:extensionElements>
+  </bpmn:message>
+  <bpmn:message id="Message_Assign" name="assignment-requested">
+    <bpmn:extensionElements><zeebe:subscription correlationKey="=requestId" /></bpmn:extensionElements>
+  </bpmn:message>
+  <bpmn:message id="Message_Decision" name="decision-made">
+    <bpmn:extensionElements><zeebe:subscription correlationKey="=requestId" /></bpmn:extensionElements>
+  </bpmn:message>
+  <bpmn:message id="Message_ControlsUpdated" name="controls-updated">
+    <bpmn:extensionElements><zeebe:subscription correlationKey="=requestId" /></bpmn:extensionElements>
+  </bpmn:message>
+  <bpmn:message id="Message_Cancel" name="cancel-request">
+    <bpmn:extensionElements><zeebe:subscription correlationKey="=requestId" /></bpmn:extensionElements>
+  </bpmn:message>
+
+  <bpmn:process id="GrantingProcess" name="Granting Process" isExecutable="true">
+    
+    <bpmn:startEvent id="StartEvent_ControlsReceived" name="Controls Received">
+      <bpmn:outgoing>Flow_1</bpmn:outgoing>
+      <bpmn:messageEventDefinition messageRef="Message_ControlsReceived" />
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_ControlsReceived" targetRef="Gateway_HasDocRequired" />
+
+    <bpmn:exclusiveGateway id="Gateway_HasDocRequired" name="Has Doc-Required?" default="Flow_NoDocReq">
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_HasDocReq</bpmn:outgoing>
+      <bpmn:outgoing>Flow_NoDocReq</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:sequenceFlow id="Flow_HasDocReq" sourceRef="Gateway_HasDocRequired" targetRef="Task_CreateDocTasks">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=hasDocRequiredControls = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:serviceTask id="Task_CreateDocTasks" name="Create Doc Tasks">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="create-review-task" />
+        <zeebe:loopCharacteristics inputCollection="=docRequiredControls" inputElement="control" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_HasDocReq</bpmn:incoming>
+      <bpmn:outgoing>Flow_2</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:sequenceFlow id="Flow_NoDocReq" sourceRef="Gateway_HasDocRequired" targetRef="Event_FirstDocArrived" />
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_CreateDocTasks" targetRef="Event_FirstDocArrived" />
+
+    <bpmn:intermediateCatchEvent id="Event_FirstDocArrived" name="First Document Arrived">
+      <bpmn:incoming>Flow_NoDocReq</bpmn:incoming>
+      <bpmn:incoming>Flow_2</bpmn:incoming>
+      <bpmn:outgoing>Flow_3</bpmn:outgoing>
+      <bpmn:messageEventDefinition messageRef="Message_FirstDocArrived" />
+    </bpmn:intermediateCatchEvent>
+
+    <bpmn:sequenceFlow id="Flow_3" sourceRef="Event_FirstDocArrived" targetRef="Task_CreateNonDocTasks" />
+    <bpmn:serviceTask id="Task_CreateNonDocTasks" name="Create Non-Doc Tasks">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="create-review-task" />
+        <zeebe:loopCharacteristics inputCollection="=nonDocRequiredControls" inputElement="control" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_3</bpmn:incoming>
+      <bpmn:outgoing>Flow_4</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:sequenceFlow id="Flow_4" sourceRef="Task_CreateNonDocTasks" targetRef="Gateway_JoinReview" />
+
+    <bpmn:exclusiveGateway id="Gateway_JoinReview">
+      <bpmn:incoming>Flow_4</bpmn:incoming>
+      <bpmn:incoming>Flow_Unassign</bpmn:incoming>
+      <bpmn:outgoing>Flow_5</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:sequenceFlow id="Flow_5" sourceRef="Gateway_JoinReview" targetRef="SubProcess_ReviewAndDecision" />
+
+    <bpmn:subProcess id="SubProcess_ReviewAndDecision" name="Review and Decision">
+      <bpmn:incoming>Flow_5</bpmn:incoming>
+      <bpmn:outgoing>Flow_EndSub</bpmn:outgoing>
+      <bpmn:startEvent id="Sub_Start">
+        <bpmn:outgoing>Sub_Flow1</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:sequenceFlow id="Sub_Flow1" sourceRef="Sub_Start" targetRef="Event_Assign" />
+      <bpmn:intermediateCatchEvent id="Event_Assign" name="Wait for Assignment">
+        <bpmn:incoming>Sub_Flow1</bpmn:incoming>
+        <bpmn:outgoing>Sub_Flow2</bpmn:outgoing>
+        <bpmn:messageEventDefinition messageRef="Message_Assign" />
+      </bpmn:intermediateCatchEvent>
+      <bpmn:sequenceFlow id="Sub_Flow2" sourceRef="Event_Assign" targetRef="Task_LockDocs" />
+      <bpmn:serviceTask id="Task_LockDocs" name="Lock Documents">
+        <bpmn:extensionElements><zeebe:taskDefinition type="lock-documents" /></bpmn:extensionElements>
+        <bpmn:incoming>Sub_Flow2</bpmn:incoming>
+        <bpmn:outgoing>Sub_Flow3</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:sequenceFlow id="Sub_Flow3" sourceRef="Task_LockDocs" targetRef="Event_Decision" />
+      <bpmn:intermediateCatchEvent id="Event_Decision" name="Wait for Decision">
+        <bpmn:incoming>Sub_Flow3</bpmn:incoming>
+        <bpmn:outgoing>Sub_Flow4</bpmn:outgoing>
+        <bpmn:messageEventDefinition messageRef="Message_Decision" />
+      </bpmn:intermediateCatchEvent>
+      <bpmn:sequenceFlow id="Sub_Flow4" sourceRef="Event_Decision" targetRef="Sub_End" />
+      <bpmn:endEvent id="Sub_End">
+        <bpmn:incoming>Sub_Flow4</bpmn:incoming>
+      </bpmn:endEvent>
+    </bpmn:subProcess>
+
+    <bpmn:boundaryEvent id="Boundary_Timeout" attachedToRef="SubProcess_ReviewAndDecision" cancelActivity="true">
+      <bpmn:outgoing>Flow_Timeout</bpmn:outgoing>
+      <bpmn:timerEventDefinition><bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT4H</bpmn:timeDuration></bpmn:timerEventDefinition>
+    </bpmn:boundaryEvent>
+
+    <bpmn:sequenceFlow id="Flow_Timeout" sourceRef="Boundary_Timeout" targetRef="Task_UnlockDocs" />
+    <bpmn:serviceTask id="Task_UnlockDocs" name="Unlock Documents">
+      <bpmn:extensionElements><zeebe:taskDefinition type="unlock-documents" /></bpmn:extensionElements>
+      <bpmn:incoming>Flow_Timeout</bpmn:incoming>
+      <bpmn:outgoing>Flow_Unassign1</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:sequenceFlow id="Flow_Unassign1" sourceRef="Task_UnlockDocs" targetRef="Task_UnassignTasks" />
+    <bpmn:serviceTask id="Task_UnassignTasks" name="Unassign Tasks">
+      <bpmn:extensionElements><zeebe:taskDefinition type="unassign-tasks" /></bpmn:extensionElements>
+      <bpmn:incoming>Flow_Unassign1</bpmn:incoming>
+      <bpmn:outgoing>Flow_Unassign</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="Flow_Unassign" sourceRef="Task_UnassignTasks" targetRef="Gateway_JoinReview" />
+
+    <bpmn:sequenceFlow id="Flow_EndSub" sourceRef="SubProcess_ReviewAndDecision" targetRef="Gateway_Decision" />
+    <bpmn:exclusiveGateway id="Gateway_Decision" name="Decision?" default="Flow_DecReject">
+      <bpmn:incoming>Flow_EndSub</bpmn:incoming>
+      <bpmn:outgoing>Flow_DecFinance</bpmn:outgoing>
+      <bpmn:outgoing>Flow_DecReject</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:sequenceFlow id="Flow_DecFinance" sourceRef="Gateway_Decision" targetRef="Task_MoveDocs">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=decision = "FINANCING"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_DecReject" sourceRef="Gateway_Decision" targetRef="EndEvent_Completed" />
+
+    <bpmn:serviceTask id="Task_MoveDocs" name="Move Docs to Postbox">
+      <bpmn:extensionElements><zeebe:taskDefinition type="move-documents-to-postbox" /></bpmn:extensionElements>
+      <bpmn:incoming>Flow_DecFinance</bpmn:incoming>
+      <bpmn:outgoing>Flow_End2</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="Flow_End2" sourceRef="Task_MoveDocs" targetRef="EndEvent_Completed" />
+    
+    <bpmn:endEvent id="EndEvent_Completed" name="Completed">
+      <bpmn:incoming>Flow_DecReject</bpmn:incoming>
+      <bpmn:incoming>Flow_End2</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- Regranting Subprocess -->
+    <bpmn:subProcess id="EventSubProcess_Regranting" triggeredByEvent="true">
+      <bpmn:startEvent id="StartEvent_Regranting" name="Controls Updated" isInterrupting="false">
+        <bpmn:outgoing>Reg_Flow1</bpmn:outgoing>
+        <bpmn:messageEventDefinition messageRef="Message_ControlsUpdated" />
+      </bpmn:startEvent>
+      <bpmn:sequenceFlow id="Reg_Flow1" sourceRef="StartEvent_Regranting" targetRef="Task_HandleRegranting" />
+      <bpmn:serviceTask id="Task_HandleRegranting" name="Handle Regranting Delta">
+        <bpmn:extensionElements><zeebe:taskDefinition type="handle-regranting" /></bpmn:extensionElements>
+        <bpmn:incoming>Reg_Flow1</bpmn:incoming>
+        <bpmn:outgoing>Reg_Flow2</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:sequenceFlow id="Reg_Flow2" sourceRef="Task_HandleRegranting" targetRef="EndEvent_Regranting" />
+      <bpmn:endEvent id="EndEvent_Regranting">
+        <bpmn:incoming>Reg_Flow2</bpmn:incoming>
+      </bpmn:endEvent>
+    </bpmn:subProcess>
+
+    <!-- Cancel Subprocess -->
+    <bpmn:subProcess id="EventSubProcess_Cancel" triggeredByEvent="true">
+      <bpmn:startEvent id="StartEvent_Cancel" name="Cancel Request" isInterrupting="true">
+        <bpmn:outgoing>Canc_Flow1</bpmn:outgoing>
+        <bpmn:messageEventDefinition messageRef="Message_Cancel" />
+      </bpmn:startEvent>
+      <bpmn:sequenceFlow id="Canc_Flow1" sourceRef="StartEvent_Cancel" targetRef="Task_UnlockDocsCancel" />
+      <bpmn:serviceTask id="Task_UnlockDocsCancel" name="Unlock Docs">
+        <bpmn:extensionElements><zeebe:taskDefinition type="unlock-documents" /></bpmn:extensionElements>
+        <bpmn:incoming>Canc_Flow1</bpmn:incoming>
+        <bpmn:outgoing>Canc_Flow2</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:sequenceFlow id="Canc_Flow2" sourceRef="Task_UnlockDocsCancel" targetRef="EndEvent_Cancelled" />
+      <bpmn:endEvent id="EndEvent_Cancelled">
+        <bpmn:incoming>Canc_Flow2</bpmn:incoming>
+      </bpmn:endEvent>
+    </bpmn:subProcess>
+
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="GrantingProcess">
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

@@ -21,8 +21,6 @@ public class GenesysRestCamundaMapper {
                 .headers(vars.getHeaders())
                 .body(vars.getBody())
                 .queryParameters(vars.getQueryParameters())
-                .connectionTimeoutInSeconds(vars.getConnectionTimeoutInSeconds())
-                .readTimeoutInSeconds(vars.getReadTimeoutInSeconds())
                 .build();
     }
 

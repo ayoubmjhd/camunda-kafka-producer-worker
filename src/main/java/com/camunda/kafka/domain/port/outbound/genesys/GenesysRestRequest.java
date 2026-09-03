@@ -16,6 +16,4 @@ public class GenesysRestRequest {
     Map<String, String> headers;
     Object body;
     Map<String, Object> queryParameters;
-    Integer connectionTimeoutInSeconds;
-    Integer readTimeoutInSeconds;
 }

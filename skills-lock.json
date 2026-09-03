@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "skills": {
+    "camunda-ai-agents": {
+      "source": "camunda/skills",
+      "sourceType": "github",
+      "skillPath": "skills/camunda-ai-agents/SKILL.md",
+      "computedHash": "480560ee5cf2b727b6bdafd134503ee8067c999a7065843db2e666ee13bf8e86"
+    },
+    "camunda-bpmn": {
+      "source": "camunda/skills",
+      "sourceType": "github",
+      "skillPath": "skills/camunda-bpmn/SKILL.md",
+      "computedHash": "bc08bc2302cc363b65380532568a5d86970cfce74b8577e47c9fdac7793f1314"
+    },
+    "camunda-c8ctl": {
+      "source": "camunda/skills",
+      "sourceType": "github",
+      "skillPath": "skills/camunda-c8ctl/SKILL.md",
+      "computedHash": "9ffabc187593ca09b38c3a592f39206b620aa45ae99cccc583f539e0133c4d9f"
+    },
+    "camunda-connectors": {
+      "source": "camunda/skills",
+      "sourceType": "github",
+      "skillPath": "skills/camunda-connectors/SKILL.md",
+      "computedHash": "4705ca1ec7ec13b7d715bb2f4fbb1e88b6b014c103b21206632e1ede4ffa4dc6"
+    },
+    "camunda-connectors-development": {
+      "source": "camunda/skills",
+      "sourceType": "github",
+      "skillPath": "skills/camunda-connectors-development/SKILL.md",
+      "computedHash": "c4d41491abecd961df1a9f71a999c63374f3919c6619274916abe8f9c2caf151"
+    },
+    "camunda-development": {
+      "source": "camunda/skills",
+      "sourceType": "github",
+      "skillPath": "skills/camunda-development/SKILL.md",
+      "computedHash": "d69e6f08416b00cf0372ff22d2dea74986f6bbc23ff01c564fec03c10c5cd941"
+    },
+    "camunda-dmn": {
+      "source": "camunda/skills",
+      "sourceType": "github",
+      "skillPath": "skills/camunda-dmn/SKILL.md",
+      "computedHash": "148f5d258b809f7a530420502257c3d8bee507e6d47f45a8cbc14e435575f8a8"
+    },
+    "camunda-docs": {
+      "source": "camunda/skills",
+      "sourceType": "github",
+      "skillPath": "skills/camunda-docs/SKILL.md",
+      "computedHash": "51b2b5ad3eefbb06789970dc7775423099a6e530d14054cf0b7f995e1efdb8d9"
+    },
+    "camunda-feel": {
+      "source": "camunda/skills",
+      "sourceType": "github",
+      "skillPath": "skills/camunda-feel/SKILL.md",
+      "computedHash": "ba3fe64574af969f7e3d1b7db66a565542d13a5f4da4a8ee3b386ec529d4fe1a"
+    },
+    "camunda-forms": {
+      "source": "camunda/skills",
+      "sourceType": "github",
+      "skillPath": "skills/camunda-forms/SKILL.md",
+      "computedHash": "c7859706ff030cce647b547308e05484b32e7be2df0c60e3f74b4e4c98ecb913"
+    },
+    "camunda-job-workers": {
+      "source": "camunda/skills",
+      "sourceType": "github",
+      "skillPath": "skills/camunda-job-workers/SKILL.md",
+      "computedHash": "96376c301d5a231241491a678d2c79c5da4eef6b846c1936945903eecb08dd3e"
+    },
+    "camunda-process-mgmt": {
+      "source": "camunda/skills",
+      "sourceType": "github",
+      "skillPath": "skills/camunda-process-mgmt/SKILL.md",
+      "computedHash": "b55ff96f4f1b4440cc635825532d7ca4eeadc869d1f6a0584867799e7c009940"
+    },
+    "camunda-process-test": {
+      "source": "camunda/skills",
+      "sourceType": "github",
+      "skillPath": "skills/camunda-process-test/SKILL.md",
+      "computedHash": "c5a16a56cb880afa8b3f715be20f47f309783b5fc2f46329e82c0f4e8123d3a9"
+    }
+  }
+}

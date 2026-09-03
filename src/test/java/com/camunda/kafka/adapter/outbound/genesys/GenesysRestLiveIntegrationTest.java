@@ -6,9 +6,8 @@ import com.camunda.kafka.domain.port.outbound.genesys.GenesysRestResponse;
 import com.camunda.kafka.application.port.outbound.GenesysTokenProvider;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.*;
-import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClient;
 
 import java.time.Duration;
 import java.util.Map;
@@ -54,27 +53,30 @@ class GenesysRestLiveIntegrationTest {
         properties.setConnectTimeoutSeconds(10);
         properties.setReadTimeoutSeconds(30);
 
-        // RestTemplate for the auth service (token endpoint)
+        // RestClient for the auth service (token endpoint)
         SimpleClientHttpRequestFactory authFactory = new SimpleClientHttpRequestFactory();
         authFactory.setConnectTimeout(Duration.ofSeconds(10));
         authFactory.setReadTimeout(Duration.ofSeconds(30));
-        RestTemplate authRestTemplate = new RestTemplateBuilder()
-                .requestFactory(() -> authFactory)
+        RestClient authRestClient = RestClient.builder()
+                .requestFactory(authFactory)
                 .build();
 
-        authService = new GenesysOAuth2TokenProvider(authRestTemplate, properties);
+        authService = new GenesysOAuth2TokenProvider(authRestClient, properties);
 
-        // RestTemplate for the connector (API calls)
+        // RestClient for the connector (API calls — with auth interceptor)
         SimpleClientHttpRequestFactory apiFactory = new SimpleClientHttpRequestFactory();
         apiFactory.setConnectTimeout(Duration.ofSeconds(10));
         apiFactory.setReadTimeout(Duration.ofSeconds(30));
-        RestTemplate apiRestTemplate = new RestTemplateBuilder()
-                .requestFactory(() -> apiFactory)
+        RestClient apiRestClient = RestClient.builder()
+                .requestFactory(apiFactory)
+                .requestInterceptor((request, body, execution) -> {
+                    request.getHeaders().setBearerAuth(authService.getAccessToken());
+                    return execution.execute(request, body);
+                })
                 .build();
 
         connector = new GenesysRestConnector(
-                apiRestTemplate,
-                new RestTemplateBuilder(),
+                apiRestClient,
                 properties,
                 authService,
                 new ObjectMapper()

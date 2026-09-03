@@ -23,8 +23,6 @@ import java.util.Map;
  *   <li>{@code headers} - Additional HTTP headers as a Map (optional, Bearer token is auto-injected)</li>
  *   <li>{@code body} - Request body as a Map/Object (optional, used with POST/PUT/PATCH)</li>
  *   <li>{@code queryParameters} - Query parameters as a Map (optional)</li>
- *   <li>{@code connectionTimeoutInSeconds} - Connect timeout override (optional, defaults to config)</li>
- *   <li>{@code readTimeoutInSeconds} - Read timeout override (optional, defaults to config)</li>
  * </ul>
  *
  * <p><strong>Note:</strong> OAuth2 authentication is handled automatically.
@@ -52,9 +50,4 @@ public class GenesysRestRequestVariables {
     /** Optional query-string parameters. */
     private Map<String, Object> queryParameters;
 
-    /** Connection timeout in seconds (optional). */
-    private Integer connectionTimeoutInSeconds;
-
-    /** Read timeout in seconds (optional). */
-    private Integer readTimeoutInSeconds;
 }
