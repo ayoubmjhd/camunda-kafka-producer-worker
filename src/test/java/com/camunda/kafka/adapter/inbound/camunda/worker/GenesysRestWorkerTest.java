@@ -10,9 +10,7 @@ import com.camunda.kafka.exception.GenesysRestException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.HashMap;
@@ -28,16 +26,15 @@ class GenesysRestWorkerTest {
     @Mock
     private GenesysRestCallUseCase genesysRestCallUseCase;
 
-    @Spy
-    private GenesysRestCamundaMapper mapper = new GenesysRestCamundaMapper();
-
-    @InjectMocks
     private GenesysRestWorker worker;
 
     private GenesysRestRequestVariables validRequest;
 
     @BeforeEach
     void setUp() {
+        // Instantiate worker with the mocked use case and a real mapper (no Mockito overhead)
+        worker = new GenesysRestWorker(genesysRestCallUseCase, new GenesysRestCamundaMapper());
+
         validRequest = new GenesysRestRequestVariables();
         validRequest.setUrl("/api/v2/users");
         validRequest.setMethod("GET");
@@ -68,8 +65,6 @@ class GenesysRestWorkerTest {
         assertEquals("Success Body", result.getBody());
 
         verify(genesysRestCallUseCase, times(1)).execute(any(GenesysRestRequest.class));
-        verify(mapper, times(1)).toDomain(validRequest);
-        verify(mapper, times(1)).toResultVariables(domainResponse);
     }
 
     @Test
@@ -102,9 +97,8 @@ class GenesysRestWorkerTest {
         assertEquals(201, result.getStatus());
         assertEquals(responseBody, result.getBody());
 
-        // Verify mapper was called with correct body
-        verify(mapper).toDomain(argThat(vars ->
-                vars.getBody() != null && vars.getBody().equals(requestBody)));
+        verify(genesysRestCallUseCase, times(1)).execute(argThat(req ->
+                req.getBody() != null && req.getBody().equals(requestBody)));
     }
 
     @Test
@@ -185,10 +179,10 @@ class GenesysRestWorkerTest {
         // Act
         worker.executeRequest(validRequest);
 
-        // Assert – verify mapper passes queryParameters through
-        verify(mapper).toDomain(argThat(vars ->
-                vars.getQueryParameters() != null
-                        && vars.getQueryParameters().get("page").equals(1)
-                        && vars.getQueryParameters().get("size").equals(25)));
+        // Assert - verify the mapper passed queryParameters through to the outbound request
+        verify(genesysRestCallUseCase).execute(argThat(req ->
+                req.getQueryParameters() != null
+                        && req.getQueryParameters().get("page").equals(1)
+                        && req.getQueryParameters().get("size").equals(25)));
     }
 }
