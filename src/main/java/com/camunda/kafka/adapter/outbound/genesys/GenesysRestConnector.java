@@ -139,7 +139,7 @@ public class GenesysRestConnector implements GenesysRestOutboundPort {
             Map<String, String> customHeaders, Object body) {
 
         RestClient.RequestBodySpec requestSpec = restClient.method(method)
-                .uri(url)
+                .uri(java.net.URI.create(url))
                 .headers(httpHeaders -> {
                     // Apply custom headers (Authorization is handled by the interceptor)
                     if (customHeaders != null) {
